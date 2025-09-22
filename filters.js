@@ -6,89 +6,74 @@ you may not use this file except in compliance with the License.
 WhatsAsena - Yusuf Usta
 */
 
-const Asena = require("../Utilis/events")
-const FilterDb = require("./sql/filters")
-// const config = require('../config');
-const Language = require("../language")
-const { prepareFilter } = require("../Utilis/greetings")
-const Lang = Language.getString("filters")
-let fm = true
-Asena.addCommand(
-  { pattern: "filter ?(.*)", fromMe: fm, desc: Lang.FILTER_DESC },
-  async (message, match) => {
-    match = message.message.match(/[\'\"](.*?)[\'\"]/gms)
-    if (match === null) {
-      filtreler = await FilterDb.getFilter(message.jid)
-      if (filtreler === false) {
-        await message.sendMessage(Lang.NO_FILTER)
-      } else {
-        var mesaj = Lang.FILTERS + "\n"
-        filtreler.map(
-          (filter) => (mesaj += "```=> " + filter.dataValues.pattern + "```\n")
-        )
-        await message.sendMessage(mesaj)
-      }
+const config = require('../../config');
+const { DataTypes } = require('sequelize');
+
+const FiltersDB = config.DATABASE.define('filter', {
+    chat: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    pattern: {
+        type: DataTypes.TEXT,
+        allowNull: false
+    },
+    text: {
+        type: DataTypes.TEXT,
+        allowNull: false
+    },
+    regex: {
+        type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false
+    }
+});
+
+async function getFilter(jid = null, filter = null) {
+    var Wher = {chat: jid};
+    if (filter !== null) Wher.push({pattern: filter});
+    var Msg = await FiltersDB.findAll({
+        where: Wher
+    });
+
+    if (Msg.length < 1) {
+        return false;
     } else {
-      if (match.length < 2) {
-        return await message.sendMessage(
-          Lang.NEED_REPLY + " ```.filter 'sa' 'as'"
-        )
-      }
-      await FilterDb.setFilter(
-        message.jid,
-        match[0].replace(/['"]+/g, ""),
-        match[1].replace(/['"]+/g, ""),
-        match[0][0] === "'" ? true : false
-      )
-      await message.sendMessage(
-        Lang.FILTERED.format(match[0].replace(/['"]+/g, ""))
-      )
+        return Msg;
     }
-  }
-)
+}
 
-Asena.addCommand(
-  { pattern: "stop ?(.*)", fromMe: fm, desc: Lang.STOP_DESC },
-  async (message, match) => {
-    match = message.message.match(/[\'\"](.*?)[\'\"]/gms)
-    if (match === null) {
-      return await message.sendMessage(
-        Lang.NEED_REPLY + "\n*Example:* ```.stop 'hello'```"
-      )
-    }
 
-    del = await FilterDb.deleteFilter(
-      message.jid,
-      match[0].replace(/['"]+/g, "")
-    )
+async function setFilter(jid = null, filter = null, tex = null, regx = false) {
+    var Msg = await FiltersDB.findAll({
+        where: {
+            chat: jid,
+            pattern: filter
+        }
+    });
 
-    if (!del) {
-      await message.sendMessage(Lang.ALREADY_NO_FILTER)
+    if (Msg.length < 1) {
+        return await FiltersDB.create({ chat: jid, pattern: filter, text: tex, regex: regx });
     } else {
-      await message.sendMessage(Lang.DELETED)
+        return await Msg[0].update({ chat: jid, pattern: filter, text: tex, regex: regx });
     }
-  }
-)
+}
 
-Asena.addCommand({ on: "text", fromMe: false }, async (message, match) => {
-  let filtreler = await FilterDb.getFilter(message.jid)
-  if (!filtreler) return
-  filtreler.map(async (filter) => {
-    pattern = new RegExp(
-      filter.dataValues.regex
-        ? filter.dataValues.pattern
-        : "\\b(" + filter.dataValues.pattern + ")\\b",
-      "gm"
-    )
-    if (pattern.test(message.message)) {
-      let { msg, MessageType } = await prepareFilter(filter.dataValues.text)
-      await message.sendMessage(
-        msg,
-        {
-          quoted: message.data,
-        },
-        MessageType
-      )
+async function deleteFilter(jid = null, filter) {
+    var Msg = await FiltersDB.findAll({
+        where: {
+            chat: jid,
+            pattern: filter
+        }
+    });
+    if (Msg.length < 1) {
+        return false;
+    } else {
+        return await Msg[0].destroy();
     }
-  })
-})
+}
+
+module.exports = {
+    FiltersDB: FiltersDB,
+    getFilter: getFilter,
+    setFilter: setFilter,
+    deleteFilter: deleteFilter
+};
